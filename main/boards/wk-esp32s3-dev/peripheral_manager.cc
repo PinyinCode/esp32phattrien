@@ -111,12 +111,13 @@ void WkEsp32s3Dev::InitializeLedGpio() {}
 void WkEsp32s3Dev::InitializeMotorMcp() {
 #ifdef CONFIG_BOARD_WK_HAVE_MOTOR
     McpServer::GetInstance().AddTool("self.motor.set_speed", "Điều khiển tốc độ động cơ trái và phải", 
-        [this](const cJSON* args, std::string& result) {
-            cJSON *left = cJSON_GetObjectItem(args, "left");
-            cJSON *right = cJSON_GetObjectItem(args, "right");
-            if (left && cJSON_IsNumber(left) && right && cJSON_IsNumber(right)) {
-                SetLeftMotor(left->valueint);
-                SetRightMotor(right->valueint);
+        PropertyList{}, 
+        [this](const PropertyList& args, std::string& result) {
+            auto left_it = args.find("left");
+            auto right_it = args.find("right");
+            if (left_it != args.end() && right_it != args.end()) {
+                SetLeftMotor(std::get<int>(left_it->second));
+                SetRightMotor(std::get<int>(right_it->second));
                 result = "{\"status\": \"success\"}";
                 return true;
             }
@@ -129,10 +130,11 @@ void WkEsp32s3Dev::InitializeMotorMcp() {
 
 void WkEsp32s3Dev::InitializeVolumeMcp() {
     McpServer::GetInstance().AddTool("self.audio.set_volume", "Thay đổi âm lượng loa (0-100)", 
-        [this](const cJSON* args, std::string& result) {
-            cJSON *vol = cJSON_GetObjectItem(args, "volume");
-            if (vol && cJSON_IsNumber(vol)) {
-                current_volume_ = vol->valueint;
+        PropertyList{}, 
+        [this](const PropertyList& args, std::string& result) {
+            auto vol_it = args.find("volume");
+            if (vol_it != args.end()) {
+                current_volume_ = std::get<int>(vol_it->second);
                 if (audio_codec_) audio_codec_->SetOutputVolume(current_volume_);
                 result = "{\"status\": \"success\"}";
                 return true;
@@ -145,10 +147,11 @@ void WkEsp32s3Dev::InitializeVolumeMcp() {
 
 void WkEsp32s3Dev::InitializeLedMcp() {
     McpServer::GetInstance().AddTool("self.led.set_effect", "Thiết lập hiệu ứng LED sáng", 
-        [this](const cJSON* args, std::string& result) {
-            cJSON *pattern = cJSON_GetObjectItem(args, "pattern");
-            if (pattern && cJSON_IsNumber(pattern)) {
-                anim_led1_.pattern = (LedPattern)pattern->valueint;
+        PropertyList{}, 
+        [this](const PropertyList& args, std::string& result) {
+            auto pattern_it = args.find("pattern");
+            if (pattern_it != args.end()) {
+                anim_led1_.pattern = (LedPattern)std::get<int>(pattern_it->second);
                 result = "{\"status\": \"success\"}";
                 return true;
             }
@@ -160,10 +163,11 @@ void WkEsp32s3Dev::InitializeLedMcp() {
 
 void WkEsp32s3Dev::InitializeEmotionMcp() {
     McpServer::GetInstance().AddTool("self.display.set_emotion", "Thay đổi biểu cảm khuôn mặt trên màn hình", 
-        [this](const cJSON* args, std::string& result) {
-            cJSON *emo = cJSON_GetObjectItem(args, "emotion");
-            if (emo && cJSON_IsString(emo)) {
-                ExecuteEmotion(emo->valuestring);
+        PropertyList{}, 
+        [this](const PropertyList& args, std::string& result) {
+            auto emo_it = args.find("emotion");
+            if (emo_it != args.end()) {
+                ExecuteEmotion(std::get<std::string>(emo_it->second));
                 result = "{\"status\": \"success\"}";
                 return true;
             }
