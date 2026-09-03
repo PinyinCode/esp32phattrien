@@ -39,8 +39,6 @@
 
 #define TAG "WkEsp32s3Dev"
 
-#define API_BANK_STATS   "/api/stats/daily-total"
-#define API_BANK_HISTORY "/api/stats/daily-total"
 
 class WkEsp32s3Dev;
 
