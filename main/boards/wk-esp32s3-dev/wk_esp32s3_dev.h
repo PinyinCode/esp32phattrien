@@ -1,152 +1,210 @@
-#include "wk_esp32s3_dev.h"
+#pragma once
 
-esp_err_t WkEsp32s3Dev::_http_event_handler(esp_http_client_event_t *evt) {
-    switch(evt->event_id) {
-        case HTTP_EVENT_ON_DATA:
-            if (evt->user_data) {
-                std::string* output = (std::string*)evt->user_data;
-                output->append((char*)evt->data, evt->data_len);
-            }
-            break;
-        default:
-            break;
-    }
-    return ESP_OK;
-}
+#include "wifi_board.h"
+#include "max98357a_codec.h"
+#include "display/lcd_display.h"
+#include "display/oled_display.h"
+#include "system_reset.h"
+#include "application.h"
+#include "button.h"
+#include "config.h"
+#include "project_config.h"
+#include "mcp_server.h"
+#include "led/single_led.h"
+#include "assets/lang_config.h"
+#include <wifi_station.h>
+#include <esp_log.h>
+#include <esp_timer.h>
+#include <driver/i2c.h>
+#include <esp_lcd_panel_vendor.h>
+#include <esp_lcd_panel_io.h>
+#include <esp_lcd_panel_ops.h>
+#include <driver/spi_common.h>
+#include <driver/ledc.h>
+#include <driver/gpio.h>
+#include <esp_rom_sys.h>
+#include <esp_adc/adc_oneshot.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
+#include <nvs_flash.h>
+#include <nvs.h>
+#include <math.h>
+#include <algorithm>
+#include <string>
+#include <cstring>
+#include <esp_http_client.h>
+#include <esp_https_ota.h>
+#include <esp_mac.h>
+#include <cJSON.h>
 
-std::string WkEsp32s3Dev::HttpGetRequest(const std::string& endpoint) {
-    std::string url = std::string(SERVER_BASE_URL) + endpoint + "/" + device_chipid_str_;
-    std::string response_data = "";
+#define TAG "WkEsp32s3Dev"
 
-    esp_http_client_config_t config = {};
-    config.url = url.c_str();
-    config.event_handler = _http_event_handler;
-    config.user_data = &response_data;
-    config.timeout_ms = 5000;
+#define API_BANK_STATS   "/api/stats/daily-total"
+#define API_BANK_HISTORY "/api/stats/daily-total"
 
-    esp_http_client_handle_t client = esp_http_client_init(&config);
-    esp_err_t err = esp_http_client_perform(client);
+class WkEsp32s3Dev;
+
+#define AHT20_CMD_CALIBRATE    0xBE
+#define AHT20_CMD_TRIGGER      0xAC
+#define AHT20_CMD_SOFT_RESET   0xBA
+#define AHT20_I2C_PORT         I2C_NUM_1
+
+#define TOF_I2C_PORT           I2C_NUM_0
+#define TOF_I2C_ADDR           0x29
+
+typedef struct {
+    bool initialized;
+    bool calibrated;
+    float temperature;
+    float humidity;
+    uint32_t last_read_ms;
+} aht20_handle_t;
+
+class SensorController {
+public:
+    SensorController(WkEsp32s3Dev* board);
+};
+
+enum LedPattern {
+    PATTERN_OFF = 0,
+    PATTERN_BREATH,
+    PATTERN_BLINK_FAST,
+    PATTERN_BLINK_SLOW,
+    PATTERN_HEARTBEAT,
+    PATTERN_WAVE,
+    PATTERN_COMET,
+    PATTERN_PULSE,
+    PATTERN_TWINKLE,
+};
+
+struct LedAnimation {
+    LedPattern pattern;
+    int speed;
+    int brightness;
+    uint32_t start_time;
+    bool active;
+};
+
+class WkEsp32s3Dev : public WifiBoard {
+private:
+    Button boot_button_;
+    Button touch_button_;
+    Display* display_ = nullptr;
     
-    std::string result = "";
-    if (err == ESP_OK && esp_http_client_get_status_code(client) == 200) {
-        result = response_data;
-    }
-    esp_http_client_cleanup(client);
-    return result;
-}
-
-WkEsp32s3Dev::WkEsp32s3Dev() :
-    boot_button_(BOOT_BUTTON_GPIO),
-#if CONFIG_TOUCH_SENSOR_ENABLED
-    touch_button_((gpio_num_t)CONFIG_TOUCH_SENSOR_GPIO),
-#else
-    touch_button_(TOUCH_BUTTON_GPIO),
-#endif
-    volume_up_button_(VOLUME_UP_BUTTON_GPIO),
-    volume_down_button_(VOLUME_DOWN_BUTTON_GPIO) {
-
-    InitDisplay();
-
-    uint8_t mac[6];
-    esp_efuse_mac_get_default(mac);
-    uint64_t chipid = 0;
-    for (int i = 0; i < 6; i++) {
-        chipid |= ((uint64_t)mac[i] << (8 * (5 - i)));
-    }
-    char chipid_str[20];
-    snprintf(chipid_str, sizeof(chipid_str), "%012llX", (unsigned long long)chipid);
-    device_chipid_str_ = std::string(chipid_str);
-
-    InitializeSystemInfoMcp();
-
-    xTaskCreate(SecurityCheckTask, "security_check_task", 4096, this, 3, nullptr);
-
-#ifdef CONFIG_BOARD_WK_HAVE_MOTOR
-    InitializeMotor();
-    InitializeMotorMcp();
-#endif
-
-    InitializeUltrasonic();
-    InitializeLedGpio();
-    InitializeLedMcp();
-    InitializeEmotionMcp();
-    InitializeVolumeMcp();
-    InitializeAdc();
-    InitializeBatteryMcp();
-
-    InitAHT20();
-    InitializeAHT20Mcp();
-
-    InitializeInfrared();
-    InitializeInfraredMcp();
-
-    InitializeBankSpeakerMcp();
-    xTaskCreate(BankNotificationTask, "bank_notification_task", 4096, this, 4, &bank_task_handle_);
-
-    anim_led1_.active = true;
-    anim_led2_.active = true;
-    xTaskCreate(LedCreativeTask, "led_creative", 8192, this, 5, nullptr);
-    xTaskCreate(IrTask, "ir_task", 4096, this, 4, nullptr);
-
-    if (display_) ShowEmotionDisplay("neutral");
-
-    InitializeButtons();
-    InitializeTools();
-    InitializeSensorMcp();
+    esp_lcd_panel_io_handle_t panel_io_ = nullptr;
+    esp_lcd_panel_handle_t panel_ = nullptr;
     
-    audio_codec_ = GetAudioCodec();
-    if (audio_codec_) audio_codec_->SetOutputVolume(current_volume_);
-}
+    Button volume_up_button_;
+    Button volume_down_button_;
+    SensorController* sensor_controller_ = nullptr;
+    adc_oneshot_unit_handle_t adc_handle_ = nullptr;
+    AudioCodec* audio_codec_ = nullptr;
+    int current_volume_ = 80;
 
-void WkEsp32s3Dev::InitializeButtons() {
-    boot_button_.OnClick([this]() {
-        auto& app = Application::GetInstance();
-        if (!sys_kernel_secured_) return;
-        if (app.GetDeviceState() == kDeviceStateStarting) {
-            EnterWifiConfigMode();
-            return;
-        }
-        app.ToggleChatState();
-    });
+    bool sys_kernel_secured_ = true;
+    std::string device_chipid_str_ = "000000000000";
+    std::string license_expiration_ = "Không xác định";
 
-#if CONFIG_TOUCH_SENSOR_ENABLED
-    touch_button_.OnClick([this]() {
-        auto& app = Application::GetInstance();
-        if (!sys_kernel_secured_) return;
-        if (app.GetDeviceState() == kDeviceStateStarting) {
-            EnterWifiConfigMode();
-            return;
-        }
-        app.ToggleChatState();
-    });
-#endif
-}
+    bool bank_speaker_enabled_ = true; 
+    TaskHandle_t bank_task_handle_ = nullptr;
 
-void WkEsp32s3Dev::InitializeTools() {}
+    aht20_handle_t* aht20_ = nullptr;
+    const int SENSOR_READ_INTERVAL_MS = 2000;
 
-Led* WkEsp32s3Dev::GetLed() {
-    static SingleLed led(LED_1);
-    return &led;
-}
+    std::string last_captured_ir_code_ = "Chưa có";
+    bool ir_initialized_ = false;
+    uint32_t ir_raw_intervals[150];
+    int ir_raw_len = 0;
+    bool is_learning_mode = false;
+    std::string active_learning_device_ = "";
 
-AudioCodec* WkEsp32s3Dev::GetAudioCodec() {
-    static Max98357aCodec audio_codec(
-        AUDIO_INPUT_SAMPLE_RATE,
-        AUDIO_OUTPUT_SAMPLE_RATE,
-        (gpio_num_t)AUDIO_I2S_SPK_GPIO_BCLK,
-        (gpio_num_t)AUDIO_I2S_SPK_GPIO_LRCK,
-        (gpio_num_t)AUDIO_I2S_SPK_GPIO_DOUT,
-        (gpio_num_t)AUDIO_I2S_MIC_GPIO_SCK,
-        (gpio_num_t)AUDIO_I2S_MIC_GPIO_WS,
-        (gpio_num_t)AUDIO_I2S_MIC_GPIO_DIN
-    );
-    return &audio_codec;
-}
+    LedAnimation anim_led1_ = {PATTERN_OFF, 5, 255, 0, false};
+    LedAnimation anim_led2_ = {PATTERN_OFF, 5, 255, 0, false};
+    uint32_t led_tick_ = 0;
+    bool led_auto_mode_ = true;
+    
+    uint32_t led_timeout_ms_ = 0;
+    uint32_t led_timeout_start_ = 0;
 
-Display* WkEsp32s3Dev::GetDisplay() {
-    return display_;
-}
+    std::string current_emotion_ = "neutral";
+    bool emotion_auto_mode_ = true;
+    bool is_blinking_ = false;
 
-SensorController::SensorController(WkEsp32s3Dev* board) {}
+    friend class SensorController;
 
-DECLARE_BOARD(WkEsp32s3Dev);
+public:
+    WkEsp32s3Dev();
+
+    // Các hàm chia tách theo module
+    static esp_err_t _http_event_handler(esp_http_client_event_t *evt);
+    std::string HttpGetRequest(const std::string& endpoint);
+
+    // security_manager.cc
+    void InitSystemKernelSecurity();
+    void InitSystemKernelSecurityCore();
+    void CheckAndPerformOta();
+    static void DailyLicenseCheckTask(void* arg);
+    static void SecurityCheckTask(void* arg);
+    void InitializeSystemInfoMcp();
+
+    // bank_manager.cc
+    static void BankNotificationTask(void* arg);
+    void InitializeBankSpeakerMcp();
+
+    // ir_manager.cc
+    std::string sanitizeKey(const std::string& input);
+    bool saveIRCodeToNVS(const std::string& deviceName, const uint8_t* data, size_t length);
+    bool playIRCodeFromNVS(const std::string& deviceName);
+    void InitializeInfrared();
+    void StartLearningIr(const std::string& targetName);
+    void SendCustomIrSignal(const uint8_t* data, size_t len);
+    bool ReceiveCustomIrSignal(uint8_t* buffer, size_t max_len, size_t* out_len);
+    static void IrTask(void* arg);
+    void InitializeInfraredMcp();
+
+    // sensor_manager.cc
+    esp_err_t aht20_write(uint8_t cmd, const uint8_t* data, size_t len);
+    esp_err_t aht20_read(uint8_t* data, size_t len);
+    esp_err_t InitAHT20();
+    esp_err_t ReadAHT20(float* temperature, float* humidity);
+    void UpdateSensorData();
+    void InitializeAHT20Mcp();
+    void InitializeUltrasonic();
+    float ReadUltrasonicDistanceCm();
+    void InitializeAdc();
+    void InitializeBatteryMcp();
+    void InitializeSensorMcp();
+
+    // peripheral_manager.cc
+    void UpdateDisplayAnimation();
+    std::string GetStatusText();
+    void ShowEmotionDisplay(const std::string& emotion);
+    int BreathEffect(uint32_t time_ms, int speed);
+    int HeartbeatEffect(uint32_t time_ms);
+    int WaveEffect(uint32_t time_ms, int speed, int led_index);
+    int CometEffect(uint32_t time_ms, int speed, int led_index);
+    int TwinkleEffect(uint32_t time_ms, int speed, int led_index);
+    int PulseEffect(uint32_t time_ms, int speed, int led_index);
+    void ApplyLedEffect(int led_pin, LedAnimation anim);
+    void SetLedTimeout(int duration_seconds);
+    void ExecuteEmotion(const std::string& emotion);
+    void UpdateEmotionByState();
+    void UpdateLedCreative();
+    static void LedCreativeTask(void* arg);
+    void InitializeMotor();
+    void SetLeftMotor(int speed);
+    void SetRightMotor(int speed);
+    void InitializeLedGpio();
+    void InitializeMotorMcp();
+    void InitializeVolumeMcp();
+    void InitializeLedMcp();
+    void InitializeEmotionMcp();
+    void InitDisplay();
+
+    void InitializeButtons();
+    void InitializeTools();
+
+    virtual Led* GetLed() override;
+    virtual AudioCodec* GetAudioCodec() override;
+    virtual Display* GetDisplay() override;
+};
