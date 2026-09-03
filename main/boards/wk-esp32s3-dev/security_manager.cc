@@ -61,8 +61,11 @@ void WkEsp32s3Dev::SecurityCheckTask(void* arg) {
 }
 
 void WkEsp32s3Dev::InitializeSystemInfoMcp() {
-    McpServer::GetInstance().AddTool("self.system.get_info", "Lấy thông tin chip ID và hạn sử dụng hệ thống", 
-        [this](const cJSON* args, std::string& result) {
+    McpServer::GetInstance().AddTool(
+        "self.system.get_info", 
+        "Lấy thông tin chip ID và hạn sử dụng hệ thống", 
+        PropertyList{}, // <--- Thêm tham số properties vào đây để đủ 4 tham số
+        [this](const PropertyList& args, std::string& result) { // <--- Chỉnh kiểu callback cho khớp
             cJSON *root = cJSON_CreateObject();
             cJSON_AddStringToObject(root, "chip_id", device_chipid_str_.c_str());
             cJSON_AddBoolToObject(root, "secured", sys_kernel_secured_);
