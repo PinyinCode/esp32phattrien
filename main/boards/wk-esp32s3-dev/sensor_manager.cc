@@ -71,8 +71,11 @@ void WkEsp32s3Dev::UpdateSensorData() {
 }
 
 void WkEsp32s3Dev::InitializeAHT20Mcp() {
-    McpServer::GetInstance().AddTool("self.sensor.get_env", "Lấy nhiệt độ và độ ẩm từ cảm biến AHT20", 
-        [this](const cJSON* args, std::string& result) {
+    McpServer::GetInstance().AddTool(
+        "self.sensor.get_env", 
+        "Lấy nhiệt độ và độ ẩm từ cảm biến AHT20", 
+        PropertyList{}, // <--- Thêm tham số properties
+        [this](const PropertyList& args, std::string& result) { // <--- Đổi const cJSON* thành const PropertyList&
             float t = 0, h = 0;
             ReadAHT20(&t, &h);
             char buf[128];
@@ -98,8 +101,11 @@ void WkEsp32s3Dev::InitializeAdc() {
 }
 
 void WkEsp32s3Dev::InitializeBatteryMcp() {
-    McpServer::GetInstance().AddTool("self.sensor.get_battery", "Lấy phần trăm dung lượng pin", 
-        [this](const cJSON* args, std::string& result) {
+    McpServer::GetInstance().AddTool(
+        "self.sensor.get_battery", 
+        "Lấy phần trăm dung lượng pin", 
+        PropertyList{}, // <--- Thêm tham số properties
+        [this](const PropertyList& args, std::string& result) { // <--- Đổi kiểu callback
             result = "{\"battery_percent\": 85}";
             return true;
         }
@@ -107,8 +113,11 @@ void WkEsp32s3Dev::InitializeBatteryMcp() {
 }
 
 void WkEsp32s3Dev::InitializeSensorMcp() {
-    McpServer::GetInstance().AddTool("self.sensor.get_distance", "Lấy khoảng cách từ cảm biến ToF/Ultrasonic", 
-        [this](const cJSON* args, std::string& result) {
+    McpServer::GetInstance().AddTool(
+        "self.sensor.get_distance", 
+        "Lấy khoảng cách từ cảm biến ToF/Ultrasonic", 
+        PropertyList{}, // <--- Thêm tham số properties
+        [this](const PropertyList& args, std::string& result) { // <--- Đổi kiểu callback
             float dist = ReadUltrasonicDistanceCm();
             char buf[64];
             snprintf(buf, sizeof(buf), "{\"distance_cm\": %.2f}", dist);
