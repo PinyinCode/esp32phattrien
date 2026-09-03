@@ -74,11 +74,15 @@ void WkEsp32s3Dev::IrTask(void* arg) {
 }
 
 void WkEsp32s3Dev::InitializeInfraredMcp() {
-    McpServer::GetInstance().AddTool("self.ir.send", "Phát tín hiệu hồng ngoại đã học", 
-        [this](const cJSON* args, std::string& result) {
-            cJSON *name = cJSON_GetObjectItem(args, "device");
-            if (name && cJSON_IsString(name)) {
-                bool success = playIRCodeFromNVS(name->valuestring);
+    McpServer::GetInstance().AddTool(
+        "self.ir.send", 
+        "Phát tín hiệu hồng ngoại đã học", 
+        PropertyList{}, // <--- Thêm tham số properties để đủ 4 tham số
+        [this](const PropertyList& args, std::string& result) { // <--- Đổi kiểu callback sang PropertyList&
+            auto device_it = args.find("device");
+            if (device_it != args.end()) {
+                std::string device_name = std::get<std::string>(device_it->second);
+                bool success = playIRCodeFromNVS(device_name);
                 result = success ? "{\"status\": \"success\"}" : "{\"status\": \"not_found\"}";
                 return success;
             }
