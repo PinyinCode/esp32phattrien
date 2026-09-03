@@ -22,11 +22,14 @@ void WkEsp32s3Dev::BankNotificationTask(void* arg) {
 }
 
 void WkEsp32s3Dev::InitializeBankSpeakerMcp() {
-    McpServer::GetInstance().AddTool("self.bank.set_speaker", "Bật hoặc tắt loa thông báo ngân hàng", 
-       PropertyList{}, [this](const cJSON* args, std::string& result) {
-            cJSON *enabled = cJSON_GetObjectItem(args, "enabled");
-            if (enabled && cJSON_IsBool(enabled)) {
-                bank_speaker_enabled_ = cJSON_IsTrue(enabled);
+    McpServer::GetInstance().AddTool(
+        "self.bank.set_speaker", 
+        "Bật hoặc tắt loa thông báo ngân hàng", 
+        PropertyList{}, 
+        [this](const PropertyList& args, std::string& result) { // <--- Sử dụng const PropertyList& args
+            auto enabled_it = args.find("enabled");
+            if (enabled_it != args.end()) {
+                bank_speaker_enabled_ = std::get<bool>(enabled_it->second);
                 result = "{\"status\": \"success\"}";
                 return true;
             }
